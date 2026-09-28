@@ -233,6 +233,130 @@
     });
   }
 
+  /* ---------- 程序化树木（递归分枝 + 叶团） ---------- */
+  S.makeTree = function (x, z, seed, scale) {
+    const g = new THREE.Group();
+    const barkMat = new THREE.MeshStandardMaterial({ color: 0x7a5a3c, roughness: 1 });
+    const leafMats = [
+      new THREE.MeshStandardMaterial({ color: 0x3f8f4a, roughness: 0.95, flatShading: true }),
+      new THREE.MeshStandardMaterial({ color: 0x4f9c52, roughness: 0.95, flatShading: true })
+    ];
+
+    function branch(origin, dir, len, rad, depth) {
+      const end = origin.clone().addScaledVector(dir, len);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.72, rad, len, 6), barkMat);
+      m.position.copy(origin).addScaledVector(dir, len * 0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      m.castShadow = true;
+      g.add(m);
+      if (depth <= 0) {
+        const blob = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(len * 0.95, 1),
+          leafMats[Math.floor(S.hash2(seed + depth, end.x) * 2) % 2]
+        );
+        blob.position.copy(end).addScaledVector(dir, len * 0.2);
+        blob.scale.set(1.05, 0.8, 1.05);
+        blob.castShadow = true;
+        g.add(blob);
+        return;
+      }
+      const n = 2 + (S.hash2(seed * 7 + depth, 3) > 0.55 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const nd = dir.clone().normalize();
+        nd.x += (S.hash2(seed * 7 + i, depth) - 0.5) * 1.6;
+        nd.z += (S.hash2(seed * 11 + i, depth) - 0.5) * 1.6;
+        nd.y += 0.22;
+        branch(end, nd.normalize(), len * 0.72, rad * 0.66, depth - 1);
+      }
+    }
+    branch(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.02, 1, 0), 1.6, 0.19, 2);
+
+    g.position.set(x, S.terrainHeight(x, z) - 0.12, z);
+    g.scale.setScalar(scale);
+    g.rotation.y = S.hash2(seed, 17) * 6.28;
+    return g;
+  };
+
+  /* ---------- 水下礁石与海草（清澈海水里能看见） ---------- */
+  function addUnderwater(scene, grassMat) {
+    for (let i = 0; i < 16; i++) {
+      const x = (S.hash2(i, 91) - 0.5) * 130;
+      const z = 20 + S.hash2(i, 93) * 80;
+      const h = S.terrainHeight(x, z);
+      if (h > -1.0 || h < -5.5) continue;
+      const r = 0.5 + S.hash2(i, 95) * 1.3;
+      const rock = S.makeRock(r, i * 21.3);
+      rock.material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0x4f6656).offsetHSL(0, 0.05, (S.hash2(i, 97) - 0.5) * 0.12),
+        roughness: 1, flatShading: true
+      });
+      rock.position.set(x, h - r * 0.25, z);
+      scene.add(rock);
+    }
+    // 海草丛
+    for (let i = 0; i < 22; i++) {
+      const x = (S.hash2(i, 101) - 0.5) * 120;
+      const z = 22 + S.hash2(i, 103) * 70;
+      const h = S.terrainHeight(x, z);
+      if (h > -0.7 || h < -3.8) continue;
+      const tuft = new THREE.Group();
+      for (let k = 0; k < 2; k++) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.9), grassMat);
+        p.position.y = 0.42;
+        p.rotation.y = k * Math.PI / 2 + S.hash2(i, k) * 1.1;
+        tuft.add(p);
+      }
+      tuft.position.set(x, h, z);
+      tuft.scale.setScalar(0.7 + S.hash2(i, 107) * 0.7);
+      swayables.push({ obj: tuft, phase: S.hash2(i, 109) * 6.28, amp: 0.16, axis: 'z' });
+      scene.add(tuft);
+    }
+  }
+
+  /* ---------- 螃蟹（走近会钻进沙里） ---------- */
+  const crabs = (S.crabs = []);
+  function makeCrab() {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xd9552f, roughness: 0.7 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), mat);
+    body.scale.set(1.25, 0.5, 1.0);
+    body.castShadow = true;
+    g.add(body);
+    for (const s of [-1, 1]) {
+      for (let i = 0; i < 3; i++) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.19, 4), mat);
+        leg.position.set(s * 0.15, -0.03, 0.07 - i * 0.06);
+        leg.rotation.z = s * 1.05;
+        leg.rotation.x = (i - 1) * 0.28;
+        g.add(leg);
+      }
+      const claw = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.055, 0.07), mat);
+      claw.position.set(s * 0.19, 0.0, 0.15);
+      claw.rotation.y = s * 0.45;
+      g.add(claw);
+    }
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4 });
+    for (const s of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), eyeMat);
+      eye.position.set(s * 0.05, 0.07, 0.11);
+      g.add(eye);
+    }
+    return g;
+  }
+
+  function addCrabs(scene) {
+    for (let i = 0; i < 12; i++) {
+      const x = (S.hash2(i, 111) - 0.5) * 110;
+      const z = 10 + S.hash2(i, 113) * 13;
+      const h = S.terrainHeight(x, z);
+      if (h < 0.05 || h > 2.2) continue;
+      const g = makeCrab();
+      g.scale.setScalar(1.6);
+      scene.add(g);
+      crabs.push({ g, x, z, hz: z, a: S.hash2(i, 115) * 6.28, hide: 0, scared: false, seed: i * 3.1 });
+    }
+  }
+
   /* ---------- 总装 ---------- */
   S.buildProps = function (scene) {
     // 棕榈树
@@ -318,25 +442,48 @@
       birds.push({
         g: b, cx: -20 + S.hash2(i, 71) * 60, cz: 10 + S.hash2(i, 73) * 40,
         r: 26 + S.hash2(i, 75) * 30, h: 22 + S.hash2(i, 77) * 14,
-        speed: 0.14 + S.hash2(i, 79) * 0.1, phase: S.hash2(i, 81) * 6.28, dir: i % 2 ? 1 : -1
+        speed: 0.14 + S.hash2(i, 79) * 0.1, phase: S.hash2(i, 81) * 6.28, dir: i % 2 ? 1 : -1,
+        diveT: 6 + S.hash2(i, 83) * 16, diving: false, diveP: 0
       });
     }
+
+    // 阔叶树
+    for (const [x, z, sc, sd] of [
+      [-28, -58, 1.1, 3], [34, -56, 0.95, 9], [-62, -34, 1.15, 15],
+      [126, 58, 1.3, 21], [133, 68, 1.0, 27], [-14, -72, 1.05, 33]
+    ]) scene.add(S.makeTree(x, z, sd, sc));
+
+    // 水下礁石与海草
+    addUnderwater(scene, grassMat);
+
+    // 螃蟹
+    addCrabs(scene);
 
     // 鱼群
     makeFishSchool(scene, 32, 62, 12, 0xe8c86a);
     makeFishSchool(scene, -18, 80, 12, 0x7fb2d9);
   };
 
-  S.updateProps = function (t) {
+  const _dummy = new THREE.Object3D();
+  S.updateProps = function (t, dt) {
+    dt = dt || 0.016;
     for (const sw of swayables) {
       if (sw.axis === 'z') sw.obj.rotation.z = Math.sin(t * 1.15 + sw.phase) * sw.amp;
       else sw.obj.rotation.y = Math.sin(t * 2.6 + sw.phase) * sw.amp;
     }
     for (const b of birds) {
       const a = t * b.speed * b.dir + b.phase;
+      // 俯冲入海：周期性下潜再拉起
+      b.diveT -= dt;
+      if (b.diveT <= 0) {
+        b.diving = !b.diving;
+        b.diveT = b.diving ? 2.4 : 9 + S.hash2(b.phase, 5) * 15;
+      }
+      b.diveP += ((b.diving ? 1 : 0) - b.diveP) * Math.min(1, dt * 1.6);
+      const yOff = -b.diveP * (b.h - 2.2);
       b.g.position.set(
         b.cx + Math.cos(a) * b.r,
-        b.h + Math.sin(t * 0.5 + b.phase) * 2.2,
+        b.h + Math.sin(t * 0.5 + b.phase) * 2.2 + yOff,
         b.cz + Math.sin(a) * b.r
       );
       const tx = -Math.sin(a) * b.dir, tz = Math.cos(a) * b.dir;
@@ -346,7 +493,6 @@
       b.g.userData.wings[0].rotation.z = flap;
       b.g.userData.wings[1].rotation.z = -flap;
     }
-    const dummy = new THREE.Object3D();
     for (const fs of fishSchools) {
       const cy = fs.baseY + Math.sin(t * 0.4 + fs.phase) * 0.4;
       const ccx = fs.cx + Math.cos(t * 0.13 + fs.phase) * 3.0;
@@ -354,16 +500,37 @@
       for (let i = 0; i < fs.count; i++) {
         const a = t * fs.speed + (i / fs.count) * 6.28;
         const rr = fs.r + Math.sin(t * 0.7 + i) * 0.3;
-        dummy.position.set(
+        _dummy.position.set(
           ccx + Math.cos(a) * rr,
           cy + Math.sin(t * 1.3 + i * 1.7) * 0.25,
           ccz + Math.sin(a) * rr
         );
-        dummy.rotation.set(0, -a + Math.sin(t * 8 + i) * 0.2, 0);
-        dummy.updateMatrix();
-        fs.inst.setMatrixAt(i, dummy.matrix);
+        _dummy.rotation.set(0, -a + Math.sin(t * 8 + i) * 0.2, 0);
+        _dummy.updateMatrix();
+        fs.inst.setMatrixAt(i, _dummy.matrix);
       }
       fs.inst.instanceMatrix.needsUpdate = true;
+    }
+
+    // 螃蟹：岸边游走，玩家靠近就钻进沙里
+    const pp = S.player.pos;
+    for (const c of crabs) {
+      const dist = Math.hypot(pp.x - c.x, pp.z - c.z);
+      if (dist < 4.5) c.scared = true; else if (dist > 7.0) c.scared = false;
+      c.hide += ((c.scared ? 1 : 0) - c.hide) * Math.min(1, dt * 3.2);
+
+      if (!c.scared && c.hide < 0.4) {
+        c.a += (S.hash2(c.seed + Math.floor(t * 0.6), 3) - 0.5) * 1.6 * dt;
+        const nx = c.x + Math.sin(c.a) * 0.6 * dt;
+        const nz = c.z + Math.cos(c.a) * 0.6 * dt;
+        const th = S.terrainHeight(nx, nz);
+        if (th > 0.05 && th < 1.7 && Math.abs(nz - c.hz) < 9) { c.x = nx; c.z = nz; }
+        else c.a += 2.4;
+      }
+      c.g.position.set(c.x, S.terrainHeight(c.x, c.z) + 0.07 - c.hide * 0.42, c.z);
+      c.g.rotation.y = c.a + Math.PI / 2;
+      c.g.rotation.z = Math.sin(t * 9 + c.seed) * 0.06 * (1 - c.hide);
+      c.g.visible = c.hide < 0.93;
     }
   };
 })();

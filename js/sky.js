@@ -1,5 +1,5 @@
 /* ============================================================
- * 天空：渐变大穹顶 + 程序化云层 + 太阳光斑
+ * 天空：湛蓝渐变穹顶 + 程序化积云 + 太阳光斑（低开销 3 层噪声）
  * ============================================================ */
 (function () {
   const S = window.Seaside;
@@ -13,19 +13,19 @@
       float c = hash21(i+vec2(0.0,1.0)), d = hash21(i+vec2(1.0,1.0));
       return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
     }
-    float fbm(vec2 p){
+    float fbm3(vec2 p){
       float v = 0.0, a = 0.5;
-      for(int i=0;i<5;i++){ v += a*vnoise(p); p = p*2.03 + vec2(17.3, 9.1); a *= 0.5; }
-      return v;
+      for(int i=0;i<3;i++){ v += a*vnoise(p); p = p*2.07 + vec2(17.3, 9.1); a *= 0.5; }
+      return v * 1.14;
     }`;
 
   const SKY_GLSL = `
     uniform vec3 uSunDir;
     vec3 skyGrad(vec3 d){
       float h = clamp(d.y, 0.0, 1.0);
-      vec3 zen = vec3(0.13, 0.40, 0.76);
-      vec3 hor = vec3(0.79, 0.90, 0.96);
-      vec3 c = mix(hor, zen, pow(h, 0.58));
+      vec3 zen = vec3(0.02, 0.19, 0.64);
+      vec3 hor = vec3(0.63, 0.81, 0.94);
+      vec3 c = mix(hor, zen, pow(h, 0.5));
       float s = max(dot(d, uSunDir), 0.0);
       c += vec3(1.0, 0.85, 0.60) * pow(s, 8.0) * 0.18;
       c += vec3(1.0, 0.96, 0.86) * pow(s, 400.0) * 1.4;
@@ -42,18 +42,18 @@
       vec3 d = normalize(vWorld - cameraPosition);
       vec3 col = skyGrad(d);
 
-      // 程序化积云
-      if (d.y > 0.005) {
+      // 程序化积云（仅在地平线以上计算，省算力）
+      if (d.y > 0.02) {
         vec2 cuv = d.xz / (d.y + 0.16);
         cuv = cuv * 1.1 + vec2(uTime * 0.006, uTime * 0.0023);
-        float f  = fbm(cuv * 0.55 + vec2(13.7, 7.1));
-        float f2 = fbm(cuv * 1.35 + vec2(uTime * 0.011, 0.0));
-        float dens = smoothstep(0.53, 0.80, f * 0.72 + f2 * 0.38);
-        dens *= smoothstep(0.015, 0.15, d.y);
-        vec3 cc = mix(vec3(1.0, 1.0, 1.0), vec3(0.71, 0.76, 0.85),
+        float f  = fbm3(cuv * 0.55 + vec2(13.7, 7.1));
+        float f2 = fbm3(cuv * 1.35 + vec2(uTime * 0.011, 0.0));
+        float dens = smoothstep(0.54, 0.82, f * 0.72 + f2 * 0.38);
+        dens *= smoothstep(0.02, 0.16, d.y);
+        vec3 cc = mix(vec3(1.0, 1.0, 1.0), vec3(0.68, 0.74, 0.84),
                       clamp((f2 - 0.42) * 1.7, 0.0, 1.0));
         cc += vec3(1.0, 0.88, 0.72) * pow(max(dot(d, uSunDir), 0.0), 6.0) * 0.22;
-        col = mix(col, cc, dens * 0.88);
+        col = mix(col, cc, dens * 0.9);
       }
 
       gl_FragColor = vec4(col, 1.0);

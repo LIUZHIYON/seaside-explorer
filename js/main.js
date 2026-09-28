@@ -17,7 +17,7 @@
 
   /* ---------- 场景与相机 ---------- */
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xc9e4f2, 0.0022);
+  scene.fog = new THREE.FogExp2(0xbfe0f0, 0.0022);
   const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.1, 1600);
 
   /* ---------- 灯光 ---------- */
@@ -68,6 +68,8 @@
   const clock = new THREE.Clock();
   let simT = 0;
   const camPos = new THREE.Vector3();
+  // 自适应分辨率：帧率偏低时自动降采样，保证视角转动始终丝滑
+  let fpsEma = 60, lowFrames = 0, quality = 0, fpsTimer = 0;
 
   function loop() {
     requestAnimationFrame(loop);
@@ -96,7 +98,10 @@
     sun.position.set(anchor.x + sunDir.x * 150, sunDir.y * 150, anchor.z + sunDir.z * 150);
     sun.target.position.set(anchor.x, 0, anchor.z);
 
-    S.updateProps(simT);
+    // 海底焦散时间
+    if (S.terrainUniforms) S.terrainUniforms.uTime.value = simT;
+
+    S.updateProps(simT, dt);
 
     // 潜水检测
     camPos.copy(camera.position);
@@ -115,6 +120,17 @@
 
     S.audio.tick();
     renderer.render(scene, camera);
+
+    // 帧率监控与自适应画质
+    fpsEma += (1 / Math.max(dt, 1e-4) - fpsEma) * 0.05;
+    if (fpsEma < 48) lowFrames++; else if (lowFrames > 0) lowFrames--;
+    if (lowFrames > 90 && quality < 2) {
+      quality++;
+      lowFrames = 0;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 1 ? 1.0 : 0.75));
+    }
+    fpsTimer += dt;
+    if (fpsTimer > 0.5) { fpsTimer = 0; S.ui.setFps(Math.round(fpsEma)); }
   }
   loop();
 })();

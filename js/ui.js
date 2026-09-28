@@ -7,6 +7,7 @@
 
   S.ui = {
     setMode(txt) { $('chipMode').textContent = txt; },
+    setFps(v) { const el = $('chipFps'); if (el) el.textContent = v + ' FPS'; },
     setPrompt(txt) {
       const el = $('prompt');
       if (txt) { el.textContent = txt; el.classList.add('show'); }

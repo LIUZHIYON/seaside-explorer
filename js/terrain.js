@@ -97,6 +97,39 @@
       metalness: 0.0
     });
 
+    // 海底焦散：两层反向流动噪声相减形成网状光斑（仅水下生效）
+    const uTime = (S.terrainUniforms = { uTime: { value: 0 } }).uTime;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = uTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
+        .replace('#include <project_vertex>',
+          'vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n#include <project_vertex>');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vWPos; uniform float uTime;
+          float chash(vec2 p){ p = fract(p*vec2(123.34,345.45)); p += dot(p,p+34.345); return fract(p.x*p.y); }
+          float cnoise(vec2 p){
+            vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.0-2.0*f);
+            return mix(mix(chash(i), chash(i+vec2(1.0,0.0)), u.x),
+                       mix(chash(i+vec2(0.0,1.0)), chash(i+vec2(1.0,1.0)), u.x), u.y);
+          }
+          float caustic(vec2 p, float t){
+            float a = cnoise(p + vec2(t*0.35, t*0.20));
+            float b = cnoise(p*1.7 - vec2(t*0.25, t*0.30) + 7.3);
+            return pow(max(1.0 - abs(a - b) * 2.2, 0.0), 3.0);
+          }`)
+        .replace('#include <dithering_fragment>', `
+          float dep = clamp(-vWPos.y, 0.0, 7.0);
+          if (dep > 0.02) {
+            float ca = caustic(vWPos.xz * 0.7, uTime * 0.6);
+            ca += caustic(vWPos.xz * 1.15 + 3.1, uTime * 0.45) * 0.3;
+            float fade = exp(-dep * 0.30) * smoothstep(0.0, 0.4, dep);
+            gl_FragColor.rgb += vec3(0.55, 0.92, 0.88) * ca * fade * 0.22;
+          }
+          #include <dithering_fragment>`);
+    };
+
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     mesh.name = 'terrain';

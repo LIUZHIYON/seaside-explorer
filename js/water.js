@@ -1,5 +1,6 @@
 /* ============================================================
  * 海洋：Gerstner 波顶点位移 + 深度渐变/菲涅尔/白浪/岸沫 着色器
+ * v2：Beer-Lambert 吸收（浅水清澈见底）+ 低开销噪声（3 层）
  * ============================================================ */
 (function () {
   const S = window.Seaside;
@@ -15,6 +16,7 @@
       vec4(0.5, 0.78, 0.14, 5.5)
     );`;
 
+  // 3 层 fbm：视觉足够，开销约为 5 层的 60%
   const NOISE_GLSL = `
     float hash21(vec2 p){ p = fract(p*vec2(123.34, 345.45)); p += dot(p, p+34.345); return fract(p.x*p.y); }
     float vnoise(vec2 p){
@@ -24,10 +26,10 @@
       float c = hash21(i+vec2(0.0,1.0)), d = hash21(i+vec2(1.0,1.0));
       return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
     }
-    float fbm(vec2 p){
+    float fbm3(vec2 p){
       float v = 0.0, a = 0.5;
-      for(int i=0;i<5;i++){ v += a*vnoise(p); p = p*2.03 + vec2(17.3, 9.1); a *= 0.5; }
-      return v;
+      for(int i=0;i<3;i++){ v += a*vnoise(p); p = p*2.07 + vec2(17.3, 9.1); a *= 0.5; }
+      return v * 1.14;
     }`;
 
   // 天空渐变函数：水面反射与天空盒共用，保证视觉一致
@@ -35,9 +37,9 @@
     uniform vec3 uSunDir;
     vec3 skyGrad(vec3 d){
       float h = clamp(d.y, 0.0, 1.0);
-      vec3 zen = vec3(0.13, 0.40, 0.76);
-      vec3 hor = vec3(0.79, 0.90, 0.96);
-      vec3 c = mix(hor, zen, pow(h, 0.58));
+      vec3 zen = vec3(0.02, 0.19, 0.64);
+      vec3 hor = vec3(0.63, 0.81, 0.94);
+      vec3 c = mix(hor, zen, pow(h, 0.5));
       float s = max(dot(d, uSunDir), 0.0);
       c += vec3(1.0, 0.85, 0.60) * pow(s, 8.0) * 0.18;
       c += vec3(1.0, 0.96, 0.86) * pow(s, 400.0) * 1.4;
@@ -106,35 +108,35 @@
     void main(){
       vec3 N = normalize(vNormal);
       // 高频细波扰动法线，产生粼粼波光
-      float n1 = fbm(vWorld.xz * 0.55 + uTime * 0.38);
-      float n2 = fbm(vWorld.xz * 0.55 - uTime * 0.30 + 31.7);
-      N = normalize(N + vec3(n1 - 0.5, 0.0, n2 - 0.5) * 0.45);
+      float n1 = fbm3(vWorld.xz * 0.5 + uTime * 0.35);
+      float n2 = fbm3(vWorld.xz * 0.5 - uTime * 0.28 + 31.7);
+      N = normalize(N + vec3(n1 - 0.5, 0.0, n2 - 0.5) * 0.40);
 
       vec3 V = normalize(uCamPos - vWorld);
       float depth = max(vDepth, 0.0);
-      float dfac = 1.0 - exp(-depth * 0.36);
-
-      vec3 shallowC = vec3(0.06, 0.58, 0.55);
-      vec3 deepC = vec3(0.006, 0.14, 0.30);
-      vec3 baseCol = mix(shallowC, deepC, dfac);
+      // 水体吸收：越深越蓝越不透明（Beer-Lambert 近似）
+      float absorb = 1.0 - exp(-depth * 0.42);
+      vec3 shallowC = vec3(0.05, 0.55, 0.55);
+      vec3 deepC = vec3(0.004, 0.11, 0.28);
+      vec3 baseCol = mix(shallowC, deepC, absorb);
 
       vec3 R = reflect(-V, N);
       R.y = abs(R.y) + 0.02;
       R = normalize(R);
       vec3 sky = skyGrad(R);
-      float fres = 0.05 + 0.95 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+      float fres = 0.04 + 0.92 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
 
       vec3 H = normalize(uSunDir + V);
       float ndh = max(dot(N, H), 0.0);
       float spec = pow(ndh, 260.0) * 2.6 + pow(ndh, 48.0) * 0.32;
 
       // 岸边碎浪：随周期涌上沙滩又退去
-      float fn = fbm(vWorld.xz * 0.16 + uTime * 0.10);
-      float shore = smoothstep(0.75, 0.04, depth);
-      float swash = 0.5 + 0.5 * sin(uTime * 0.85 - depth * 2.2 + fn * 6.2);
+      float fn = fbm3(vWorld.xz * 0.16 + uTime * 0.10);
+      float shore = smoothstep(0.55, 0.03, depth);
+      float swash = 0.5 + 0.5 * sin(uTime * 0.85 - depth * 2.4 + fn * 6.2);
       // 浪尖白沫
       float crest = smoothstep(0.78, 1.28, vH * 0.95 + (fn - 0.5) * 0.55);
-      float foamN = fbm(vWorld.xz * 1.1 + vec2(uTime * 0.35, -uTime * 0.22));
+      float foamN = fbm3(vWorld.xz * 1.05 + vec2(uTime * 0.35, -uTime * 0.22));
       float foam = shore * (0.30 + 0.85 * swash) * smoothstep(0.34, 0.8, foamN) + crest * 0.9;
       foam = clamp(foam, 0.0, 1.0);
 
@@ -146,10 +148,10 @@
       float fogF = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
       col = mix(col, uFogColor, clamp(fogF, 0.0, 1.0));
 
-      float alpha = mix(0.62, 0.97, dfac);
+      // 透明度同样服从吸收定律：浅水清澈见底，深水不透光
+      float alpha = clamp(1.0 - exp(-depth * 0.62), 0.12, 1.0);
       alpha = max(alpha, foam);
-      alpha = clamp(alpha + fres * 0.15, 0.0, 1.0);
-      alpha *= mix(0.62, 1.0, smoothstep(0.0, 1.0, depth));
+      alpha = clamp(alpha + fres * 0.12, 0.0, 1.0);
 
       gl_FragColor = vec4(col, alpha);
       #include <tonemapping_fragment>
@@ -157,7 +159,7 @@
     }`;
 
   S.buildWater = function (scene, heightMapTex) {
-    const geo = new THREE.PlaneGeometry(S.CFG.WORLD_SIZE, S.CFG.WORLD_SIZE, 256, 256);
+    const geo = new THREE.PlaneGeometry(S.CFG.WORLD_SIZE, S.CFG.WORLD_SIZE, 224, 224);
     geo.rotateX(-Math.PI / 2);
 
     const mat = new THREE.ShaderMaterial({
@@ -173,7 +175,7 @@
         uHeightMap: { value: heightMapTex },
         uSunDir: { value: S.SUN_DIR.clone() },
         uCamPos: { value: new THREE.Vector3() },
-        uFogColor: { value: new THREE.Color(0xc9e4f2) },
+        uFogColor: { value: new THREE.Color(0xbfe0f0) },
         uFogDensity: { value: 0.0022 }
       }
     });
