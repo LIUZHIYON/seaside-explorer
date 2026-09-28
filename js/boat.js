@@ -11,7 +11,7 @@
     scene.add(g);
     S.boat = {
       g, x: 14, z: 42, heading: 2.7, v: 0, occ: false,
-      pitch: 0, roll: 0, wakeTimer: 0, wakes: []
+      pitch: 0, roll: 0, wakeTimer: 0, wakes: [], oarT: 0
     };
     g.position.set(14, 0.3, 42);
     g.rotation.y = 2.7;
@@ -52,14 +52,14 @@
       b.x = nx; b.z = nz;
     }
 
-    // 浮动姿态（四点采样波浪）
-    const y0 = S.waveHeight(b.x, b.z, t) + 0.22;
+    // 浮动姿态（四点采样波浪）—— 俯仰/横摇限幅，避免大风浪里点头过度
+    const y0 = S.waveHeight(b.x, b.z, t) + 0.05;   // 吃水 0.15m：船底没入水中
     const hb = S.waveHeight(b.x + fwd.x * 1.5, b.z + fwd.z * 1.5, t);
     const hs = S.waveHeight(b.x - fwd.x * 1.5, b.z - fwd.z * 1.5, t);
     const hl = S.waveHeight(b.x - rightV.x * 0.7, b.z - rightV.z * 0.7, t);
     const hr = S.waveHeight(b.x + rightV.x * 0.7, b.z + rightV.z * 0.7, t);
-    const targetPitch = -Math.atan((hb - hs) / 3.0) * 0.9;
-    const targetRoll = Math.atan((hl - hr) / 1.4) * 0.8;
+    const targetPitch = S.clamp(-Math.atan((hb - hs) / 3.0) * 0.9, -0.18, 0.18);
+    const targetRoll  = S.clamp( Math.atan((hl - hr) / 1.4) * 0.8, -0.22, 0.22);
     b.pitch += (targetPitch - b.pitch) * Math.min(1, dt * 4);
     b.roll += (targetRoll - b.roll) * Math.min(1, dt * 4);
 
@@ -68,6 +68,22 @@
     b.g.rotation.y = b.heading;
     b.g.rotation.x = b.pitch;
     b.g.rotation.z = b.roll;
+
+    // 划桨动画：随船速加快摆臂
+    const oars = b.g.userData.oars;
+    if (oars) {
+      if (Math.abs(b.v) > 0.25) {
+        b.oarT += dt * (1.1 + Math.abs(b.v) * 0.5);
+        const swing = Math.sin(b.oarT) * 0.6;
+        const feather = Math.cos(b.oarT) * 0.18;
+        for (const o of oars) { o.rotation.y = swing; o.rotation.z = feather; }
+      } else {
+        for (const o of oars) {
+          o.rotation.y += (0 - o.rotation.y) * Math.min(1, dt * 2);
+          o.rotation.z += (0 - o.rotation.z) * Math.min(1, dt * 2);
+        }
+      }
+    }
 
     // 尾迹泡沫
     b.wakeTimer -= dt;
@@ -140,14 +156,17 @@
   const camDesired = new THREE.Vector3();
   S.updateBoatCam = function (dt, camera) {
     const b = S.boat;
-    fwd.set(Math.sin(b.heading), 0, Math.cos(b.heading));
+    const ly = S.boatLookYaw || 0;
+    // 跟随镜头：可用鼠标绕船环视
+    fwd.set(Math.sin(b.heading + ly), 0, Math.cos(b.heading + ly));
+    const pitchOff = (S.player.pitch || 0) * 2.4;
     camDesired.set(
       b.x - fwd.x * 7.8,
-      b.g.position.y + 3.3,
+      b.g.position.y + 3.3 + pitchOff,
       b.z - fwd.z * 7.8
     );
     camera.position.lerp(camDesired, Math.min(1, dt * 3.2));
-    camTarget.set(b.x + fwd.x * 5.0, b.g.position.y + 1.0, b.z + fwd.z * 5.0);
+    camTarget.set(b.x + fwd.x * 5.0, b.g.position.y + 0.8, b.z + fwd.z * 5.0);
     camera.lookAt(camTarget);
   };
 })();

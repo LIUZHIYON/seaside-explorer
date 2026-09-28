@@ -7,13 +7,15 @@
 
   // 与 config.js 中 S.WAVES 保持一致的 GLSL 常量
   const WAVE_CONST = `
-    const int NW = 5;
+    const int NW = 7;
     const vec4 WAVES[NW] = vec4[NW](
       vec4(1.0, 0.25, 0.085, 64.0),
       vec4(0.62, 1.0, 0.09, 34.0),
       vec4(-0.35, 0.85, 0.10, 19.0),
       vec4(0.9, -0.42, 0.12, 10.0),
-      vec4(0.5, 0.78, 0.14, 5.5)
+      vec4(0.5, 0.78, 0.14, 5.5),
+      vec4(0.85, 0.42, 0.10, 3.2),
+      vec4(-0.6, 0.3, 0.09, 2.1)
     );`;
 
   // 3 层 fbm：视觉足够，开销约为 5 层的 60%
@@ -130,6 +132,11 @@
       float ndh = max(dot(N, H), 0.0);
       float spec = pow(ndh, 260.0) * 2.6 + pow(ndh, 48.0) * 0.32;
 
+      // 次表面散射：阳光穿透浪峰的青透质感
+      float sss = pow(max(dot(V + uSunDir * 0.55, N), 0.0), 3.0)
+                  * smoothstep(-0.15, 0.65, vH);
+      vec3 sssCol = vec3(0.06, 0.46, 0.40) * sss * 0.55;
+
       // 岸边碎浪：随周期涌上沙滩又退去
       float fn = fbm3(vWorld.xz * 0.16 + uTime * 0.10);
       float shore = smoothstep(0.55, 0.03, depth);
@@ -141,6 +148,7 @@
       foam = clamp(foam, 0.0, 1.0);
 
       vec3 col = mix(baseCol, sky, clamp(fres, 0.0, 1.0));
+      col += sssCol;
       col += vec3(1.0, 0.95, 0.82) * spec;
       col = mix(col, vec3(0.97, 0.99, 1.0), foam * 0.92);
 

@@ -33,6 +33,11 @@
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
     });
+    $('btnGlow').addEventListener('click', function () {
+      const on = !S.postFXOn();
+      S.setPostFX(on);
+      this.classList.toggle('off', !on);
+    });
     $('btnHelp').addEventListener('click', () => S.ui.toggleHelp());
 
     // 点击画面重新锁定鼠标
@@ -62,6 +67,11 @@
         $('btnMusic').classList.toggle('off', on === false);
       }
       if (e.code === 'KeyH') S.ui.toggleHelp();
+      if (e.code === 'KeyB') {
+        const on = !S.postFXOn();
+        S.setPostFX(on);
+        $('btnGlow').classList.toggle('off', !on);
+      }
       if (e.code === 'Space') e.preventDefault();
     });
   };

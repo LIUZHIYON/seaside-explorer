@@ -191,7 +191,7 @@ html, body {
 /* 潜水色调 */
 #underwaterTint {
   position: fixed; inset: 0; z-index: 15; pointer-events: none;
-  background: radial-gradient(ellipse at 50% 45%, rgba(24, 96, 108, 0.30), rgba(6, 42, 62, 0.62));
+  background: radial-gradient(ellipse at 50% 45%, rgba(22, 106, 134, 0.16), rgba(4, 46, 74, 0.38));
   opacity: 0; transition: opacity 0.25s;
 }
 #underwaterTint.show { opacity: 1; }

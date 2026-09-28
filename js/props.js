@@ -131,11 +131,41 @@
     return tex;
   }
 
-  /* ---------- 小船模型 ---------- */
+  /* ---------- 小船模型（木纹 + 船肋 + 桨架 + 缆绳） ---------- */
+  function makeWoodTexture() {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#b07a3f';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 60; i++) {           // 木纹条带
+      const y = Math.random() * 256;
+      ctx.strokeStyle = `rgba(${110 + Math.random() * 60},${70 + Math.random() * 40},${30 + Math.random() * 30},0.45)`;
+      ctx.lineWidth = 0.8 + Math.random() * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(85, y + (Math.random() - 0.5) * 9, 170, y + (Math.random() - 0.5) * 9, 256, y + (Math.random() - 0.5) * 5);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 200; i++) {          // 木节与斑点
+      ctx.fillStyle = `rgba(90,60,30,${0.05 + Math.random() * 0.2})`;
+      ctx.beginPath();
+      ctx.arc(Math.random() * 256, Math.random() * 256, 0.6 + Math.random() * 1.8, 0, 7);
+      ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
   S.buildBoatMesh = function () {
     const g = new THREE.Group();
-    const wood = new THREE.MeshStandardMaterial({ color: 0xb07a3f, roughness: 0.75 });
-    const woodDark = new THREE.MeshStandardMaterial({ color: 0x7d5230, roughness: 0.85 });
+    const woodTex = makeWoodTexture();
+    const wood = new THREE.MeshStandardMaterial({ map: woodTex, color: 0xffffff, roughness: 0.72 });
+    const woodDark = new THREE.MeshStandardMaterial({ color: 0x6f4526, roughness: 0.85 });
+    const ropeMat = new THREE.MeshStandardMaterial({ color: 0xd8c9a3, roughness: 1 });
+    const metal = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.35, metalness: 0.85 });
 
     const shape = new THREE.Shape();
     shape.moveTo(0, 2.1);
@@ -152,32 +182,77 @@
     hullGeo.rotateX(Math.PI / 2);
     hullGeo.translate(0, 0.5, 0);
     const hull = new THREE.Mesh(hullGeo, wood);
-    hull.castShadow = true;
     g.add(hull);
 
+    // 船舷内衬 + 船底格栅
     const floor = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.05, 2.15), woodDark);
     floor.position.set(0, 0.22, 0.1);
     g.add(floor);
-
-    const benchGeo = new THREE.BoxGeometry(1.02, 0.07, 0.3);
-    const b1 = new THREE.Mesh(benchGeo, woodDark); b1.position.set(0, 0.42, 0.62); g.add(b1);
-    const b2 = new THREE.Mesh(benchGeo, woodDark); b2.position.set(0, 0.42, -0.62); g.add(b2);
-
-    // 船桨
-    const oarMat = new THREE.MeshStandardMaterial({ color: 0xc59a63, roughness: 0.8 });
-    for (const sx of [-1, 1]) {
-      const oar = new THREE.Group();
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 1.9, 6), oarMat);
-      shaft.rotation.z = Math.PI / 2;
-      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.03, 0.14), oarMat);
-      blade.position.x = 0.95;
-      oar.add(shaft, blade);
-      oar.position.set(sx * 0.28, 0.47, -0.05);
-      oar.rotation.y = sx * -0.35;
-      g.add(oar);
+    for (let i = 0; i < 4; i++) {                 // 船底格栅板
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.035, 0.12), woodDark);
+      plank.position.set(0, 0.28, -0.75 + i * 0.5);
+      g.add(plank);
     }
+    // 船肋
+    for (let i = 0; i < 4; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.34, 0.1), woodDark);
+      rib.position.set(0.44, 0.42, -0.8 + i * 0.6);
+      rib.rotation.z = -0.12;
+      g.add(rib);
+      const rib2 = rib.clone(); rib2.position.x = -0.44; rib2.rotation.z = 0.12;
+      g.add(rib2);
+    }
+    // 坐板与横梁
+    const benchGeo = new THREE.BoxGeometry(1.02, 0.075, 0.3);
+    for (const z of [0.62, -0.62]) {
+      const b = new THREE.Mesh(benchGeo, wood);
+      b.position.set(0, 0.44, z);
+      g.add(b);
+    }
+    // 舷缘描边（深色压边条，让轮廓更立体）
+    for (const sx of [-1, 1]) {
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 2.3), woodDark);
+      trim.position.set(sx * 0.55, 0.54, 0.35);
+      trim.rotation.y = sx * 0.06;
+      g.add(trim);
+    }
+    // 船首缆绳环与绳圈
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 6, 12), metal);
+    ring.position.set(0, 0.62, 1.95);
+    g.add(ring);
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 6, 14), ropeMat);
+    coil.position.set(-0.28, 0.34, -1.05);
+    coil.rotation.x = Math.PI / 2;
+    g.add(coil);
+    // 小木桶
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.24, 10), woodDark);
+    bucket.position.set(0.3, 0.38, -1.0);
+    g.add(bucket);
 
-    // 船头小旗
+    // 桨（带桨架，可随划动摆臂）
+    const oarMat = new THREE.MeshStandardMaterial({ color: 0xc59a63, roughness: 0.8 });
+    const oars = [];
+    for (const sx of [-1, 1]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sx * 0.5, 0.5, -0.15);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.028, 1.95, 6), oarMat);
+      shaft.rotation.z = Math.PI / 2;
+      shaft.position.set(sx * 0.98, 0, 0);
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.22, 6), oarMat);
+      grip.rotation.z = Math.PI / 2;
+      grip.position.set(sx * 0.16, 0, 0);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.025, 0.16), oarMat);
+      blade.position.set(sx * 1.9, -0.05, 0);
+      blade.rotation.x = 0.08;
+      const rowlock = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.22, 6), metal);
+      rowlock.position.set(sx * 0.5, 0.5, -0.15);
+      pivot.add(shaft, grip, blade);
+      g.add(pivot, rowlock);
+      oars.push(pivot);
+    }
+    g.userData.oars = oars;
+
+    // 船首小旗
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.2, 5), woodDark);
     pole.position.set(0, 1.0, 1.75);
     g.add(pole);
@@ -190,7 +265,76 @@
     g.add(flag);
     swayables.push({ obj: flag, phase: 2.2, amp: 0.5, axis: 'y' });
 
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    return g;
+  };
+
+  /* ---------- 木栈桥（码头） ---------- */
+  S.buildPier = function (x, z0, z1) {
+    const g = new THREE.Group();
+    const woodTex = makeWoodTexture();
+    woodTex.repeat.set(1, 4);
+    const deckMat = new THREE.MeshStandardMaterial({ map: woodTex, color: 0xc89a68, roughness: 0.9 });
+    const pileMat = new THREE.MeshStandardMaterial({ color: 0x6b5238, roughness: 1 });
+
+    const len = z1 - z0, cz = (z0 + z1) / 2, deckY = 1.45;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.12, len), deckMat);
+    deck.position.set(x, deckY, cz);
+    deck.castShadow = deck.receiveShadow = true;
+    g.add(deck);
+    // 板缝
+    for (let i = 0; i < Math.floor(len / 0.55); i++) {
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(3.16, 0.02, 0.035), pileMat);
+      seam.position.set(x, deckY + 0.07, z0 + 0.3 + i * 0.55);
+      g.add(seam);
+    }
+    // 桩柱
+    for (let i = 0; i <= 6; i++) {
+      const pz = z0 + (len * i) / 6;
+      for (const sx of [-1.4, 1.4]) {
+        const seabed = S.terrainHeight(x + sx, pz);
+        const h = deckY - seabed + 0.6;
+        const pile = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, h, 8), pileMat);
+        pile.position.set(x + sx, seabed + h / 2, pz);
+        pile.castShadow = true;
+        g.add(pile);
+      }
+    }
+    // 系缆柱
+    for (let i = 0; i < 3; i++) {
+      const pz = z0 + 2 + i * (len - 4) / 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.5, 8), pileMat);
+      post.position.set(x - 1.5, deckY + 0.3, pz);
+      post.castShadow = true;
+      g.add(post);
+    }
+    // 栏杆（两侧扶手 + 立柱）
+    const railGeo = new THREE.BoxGeometry(0.06, 0.06, len);
+    for (const sx of [-1.5, 1.5]) {
+      for (const ry of [0.52, 0.92]) {
+        const rail = new THREE.Mesh(railGeo, pileMat);
+        rail.position.set(x + sx, deckY + ry, cz);
+        rail.castShadow = true;
+        g.add(rail);
+      }
+      for (let i = 0; i <= 12; i++) {
+        const pz = z0 + (len * i) / 12;
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.0, 0.07), pileMat);
+        post.position.set(x + sx, deckY + 0.5, pz);
+        post.castShadow = true;
+        g.add(post);
+      }
+    }
+    // 灯柱
+    const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.1, 7), pileMat);
+    lampPole.position.set(x + 1.3, deckY + 1.05, z0 + 2.5);
+    const lampHead = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.26, 8),
+      new THREE.MeshStandardMaterial({ color: 0xdfe6ea, roughness: 0.5, metalness: 0.4 }));
+    lampHead.position.set(x + 1.3, deckY + 2.15, z0 + 2.5);
+    const lampGlass = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xfff3c4, roughness: 0.2, emissive: 0x554417 }));
+    lampGlass.position.copy(lampHead.position);
+    g.add(lampPole, lampHead, lampGlass);
     return g;
   };
 
@@ -357,6 +501,45 @@
     }
   }
 
+  /* ---------- 滩涂碎石 / 贝壳（实例化堆细节） ---------- */
+  function addBeachScatter(scene) {
+    const d = new THREE.Object3D();
+
+    const pebbleMat = new THREE.MeshStandardMaterial({ color: 0x8f8577, roughness: 0.95, flatShading: true });
+    const pebbles = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 6, 4), pebbleMat, 200);
+    let n = 0;
+    for (let i = 0; i < 400 && n < 200; i++) {
+      const x = (S.hash2(i, 131) - 0.5) * 180, z = -4 - S.hash2(i, 133) * 66;
+      const h = S.terrainHeight(x, z);
+      if (h < 0.25) continue;
+      const s = 0.45 + S.hash2(i, 141) * 1.15;
+      d.position.set(x, h + 0.025, z);
+      d.rotation.set(S.hash2(i, 135) * 3, S.hash2(i, 137) * 6, S.hash2(i, 139) * 3);
+      d.scale.set(s * 1.35, s * 0.55, s);
+      d.updateMatrix();
+      pebbles.setMatrixAt(n++, d.matrix);
+    }
+    pebbles.count = n; pebbles.castShadow = true; pebbles.receiveShadow = true;
+    scene.add(pebbles);
+
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xf3ece0, roughness: 0.55 });
+    const shells = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 7, 5), shellMat, 90);
+    n = 0;
+    for (let i = 0; i < 240 && n < 90; i++) {
+      const x = (S.hash2(i, 151) - 0.5) * 150, z = -2 - S.hash2(i, 153) * 45;
+      const h = S.terrainHeight(x, z);
+      if (h < 0.15 || h > 2) continue;
+      const s = 0.5 + S.hash2(i, 155) * 0.7;
+      d.position.set(x, h + 0.03, z);
+      d.rotation.set(0.1, S.hash2(i, 157) * 6.28, S.hash2(i, 159) * 0.4);
+      d.scale.set(s, s * 0.38, s * 0.8);
+      d.updateMatrix();
+      shells.setMatrixAt(n++, d.matrix);
+    }
+    shells.count = n; shells.castShadow = true;
+    scene.add(shells);
+  }
+
   /* ---------- 总装 ---------- */
   S.buildProps = function (scene) {
     // 棕榈树
@@ -446,6 +629,12 @@
         diveT: 6 + S.hash2(i, 83) * 16, diving: false, diveP: 0
       });
     }
+
+    // 滩涂碎石与贝壳
+    addBeachScatter(scene);
+
+    // 木栈桥
+    scene.add(S.buildPier(-52, 2, 64));
 
     // 阔叶树
     for (const [x, z, sc, sd] of [

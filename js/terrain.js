@@ -58,6 +58,35 @@
     return tex;
   }
 
+  // 沙粒凹凸贴图（增加近景细节）
+  function makeBumpTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 9000; i++) {
+      const v = 108 + Math.floor(Math.random() * 70);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.6, 1.6);
+    }
+    for (let i = 0; i < 260; i++) {   // 小石子凹坑
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 3 + Math.random() * 4);
+      const dark = 40 + Math.random() * 60;
+      g.addColorStop(0, `rgba(${dark},${dark},${dark},0.9)`);
+      g.addColorStop(1, 'rgba(128,128,128,0)');
+      ctx.save();
+      ctx.translate(Math.random() * 256, Math.random() * 256);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, 7, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(90, 90);
+    return tex;
+  }
+
   S.buildTerrain = function (scene) {
     const W = S.CFG.WORLD_SIZE, SEG = 240;
     const geo = new THREE.PlaneGeometry(W, W, SEG, SEG);
@@ -93,6 +122,8 @@
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       map: makeSandTexture(),
+      bumpMap: makeBumpTexture(),
+      bumpScale: 0.28,
       roughness: 0.96,
       metalness: 0.0
     });

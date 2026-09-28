@@ -41,6 +41,7 @@
   S.buildSky(scene);
   S.buildProps(scene);
   S.initBoat(scene);
+  S.initPostFX(renderer, scene, camera);
 
   /* ---------- 启动流程 ---------- */
   S.started = false;
@@ -119,7 +120,7 @@
     }
 
     S.audio.tick();
-    renderer.render(scene, camera);
+    S.renderPostFX(simT);
 
     // 帧率监控与自适应画质
     fpsEma += (1 / Math.max(dt, 1e-4) - fpsEma) * 0.05;
@@ -127,7 +128,13 @@
     if (lowFrames > 90 && quality < 2) {
       quality++;
       lowFrames = 0;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality === 1 ? 1.0 : 0.75));
+      if (quality === 1) {
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
+      } else {
+        // 第二步：关闭后处理，优先保证流畅
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.85));
+        S.setPostFX(false);
+      }
     }
     fpsTimer += dt;
     if (fpsTimer > 0.5) { fpsTimer = 0; S.ui.setFps(Math.round(fpsEma)); }
